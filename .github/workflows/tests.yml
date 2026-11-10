@@ -1,0 +1,21 @@
+name: Tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Fetch pinned AstrBot adapter for compatibility tests
+        run: curl --fail --location --retry 2 --max-time 30 https://raw.githubusercontent.com/AstrBotDevs/AstrBot/v4.29.0/astrbot/core/platform/sources/aiocqhttp/aiocqhttp_message_event.py -o "$RUNNER_TEMP/adapter429.py"
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+        env:
+          ASTRBOT_429_ADAPTER: ${{ runner.temp }}/adapter429.py

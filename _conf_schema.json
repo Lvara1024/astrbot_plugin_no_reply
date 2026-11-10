@@ -1,0 +1,10 @@
+{
+  "markers": {"description": "检测词列表", "type": "list", "default": ["[NO_REPLY]"], "hint": "按字面匹配，支持多个词，不是正则。空项会忽略，首个词作为默认沉默输出。"},
+  "match_mode": {"description": "拦截方式", "type": "string", "default": "exact", "options": ["exact", "contains"], "labels": ["回复只有检测词才拦截", "回复包含检测词就拦截"], "hint": "exact：忽略首尾空白后，整条文本等于列表中任意一个词。正常回复保留流式发送。contains：完整缓存后检查，命中则整条丢弃；未命中才发送，首条消息会延后。", "obvious_hint": true},
+  "ignore_case": {"description": "忽略大小写", "type": "bool", "default": false, "hint": "使用 Unicode casefold；默认区分大小写。"},
+  "inject_prompt": {"description": "自动注入沉默提示词", "type": "bool", "default": true},
+  "system_instruction": {"description": "沉默提示词", "type": "text", "default": "当你判断当前消息无需回复（例如对话已经结束或没有需要回应的内容）时，仅输出 {primary}，不要添加解释、标点、引号或 Markdown。允许的沉默标记：{markers}。需要回复时正常回答，不要附加沉默标记。", "hint": "{primary} 替换为第一个检测词，{markers} 替换为全部检测词。"},
+  "suppress_followups": {"description": "命中后拦截后续追加内容", "type": "bool", "default": true, "hint": "停止当前事件传播，并阻断同一事件后续的 event.send / send_streaming。无法撤回已经发送的内容，也不能阻断绕过事件接口的独立主动发送。"},
+  "max_buffer_chars": {"description": "最多缓存文本字符数", "type": "int", "default": 262144, "hint": "超过上限时丢弃当前回复并记录 buffer_limit，不会放行尚未检测的内容。仅对尚在缓存的阶段生效。"},
+  "max_buffer_chunks": {"description": "最多缓存分片数", "type": "int", "default": 8192, "hint": "防止大量空分片/非文本分片堆积；超限丢弃并记录 buffer_limit。"}
+}
