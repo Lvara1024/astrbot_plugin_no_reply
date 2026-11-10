@@ -45,8 +45,8 @@ class NoReplyPlugin(Star):
         mode = self.config.get("match_mode", "exact")
         if mode not in ("exact", "contains"):
             raise ValueError("match_mode 必须为 exact 或 contains")
-        chars = int(self.config.get("max_buffer_chars", 262144))
-        chunks = int(self.config.get("max_buffer_chunks", 8192))
+        chars = int(self.config.get("max_buffer_chars", 32))
+        chunks = int(self.config.get("max_buffer_chunks", 32))
         if chars < 1 or chunks < 1:
             raise ValueError("缓存上限必须大于 0")
         key = json.dumps([words, case, mode, chars, chunks, bool(self.config.get("suppress_followups", True))], ensure_ascii=False)
@@ -86,7 +86,9 @@ class NoReplyPlugin(Star):
             return
         text = resp.completion_text or ""
         chain_text, media = inspect_chain(getattr(resp, "result_chain", None))
-        matched = guard.settings.matcher.matches(text or chain_text, guard.settings.mode, media)
+        matched = guard.settings.matches(text or chain_text, media)
+        if guard.stream_seen and guard.limit_reached:
+            matched = False
         # A normal stream prefix (including media) rules out exact matching.
         # Otherwise recognize a final marker here too, before lower-priority
         # response hooks can append/send text while the generator is finishing.
@@ -116,7 +118,7 @@ class NoReplyPlugin(Star):
             if guard.stream_seen:
                 return
             text, media = inspect_chain(result)
-            if guard.settings.matcher.matches(text, guard.settings.mode, media):
+            if guard.settings.matches(text, media):
                 guard.block()
                 event.clear_result()
                 if guard.settings.suppress_followups:

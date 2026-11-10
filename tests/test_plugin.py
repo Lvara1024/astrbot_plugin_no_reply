@@ -28,6 +28,11 @@ class Image:
 class Chain:
     def __init__(self, chain=None, **kwargs):
         self.chain = chain or []
+        self.type = kwargs.get('type')
+
+    def message(self, text):
+        self.chain.append(Plain(text))
+        return self
 
     def squash_plain(self):
         text = ''.join(c.text for c in self.chain if isinstance(c, Plain))
@@ -176,3 +181,32 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
         schema = json.loads((Path(__file__).resolve().parents[1] / '_conf_schema.json').read_text(encoding='utf-8'))
         self.assertEqual(schema['markers']['default'], ['[NO_REPLY]'])
         self.assertEqual(schema['system_instruction']['default'], plugin_module.DEFAULT_INSTRUCTION)
+        self.assertEqual(schema['max_buffer_chars']['default'], 32)
+        self.assertEqual(schema['max_buffer_chunks']['default'], 32)
+
+    async def test_late_response_hook_does_not_truncate_released_stream(self):
+        plugin = plugin_module.NoReplyPlugin(None, {'match_mode': 'contains'})
+        event = Event()
+        await plugin.prepare(event, types.SimpleNamespace(system_prompt=''))
+        full = 'x' * 33 + '[NO_REPLY]'
+        resp = types.SimpleNamespace(completion_text=full, result_chain=None)
+        async def source():
+            yield Chain([Plain(full)])
+            await plugin.check_response(event, resp)
+            yield Chain([Plain('tail')])
+        await event.send_streaming(source())
+        self.assertEqual(''.join(c.text for chain in event.sent for c in chain.chain), full + 'tail')
+        self.assertFalse(event.stopped)
+
+    async def test_nonstream_only_scans_short_window_on_any_platform(self):
+        plugin = plugin_module.NoReplyPlugin(None, {'match_mode': 'contains'})
+        for platform in ['aiocqhttp', 'lark', 'telegram', 'discord', 'slack', 'wecom', 'dingtalk', 'custom_adapter']:
+            event = Event()
+            event.get_platform_name = lambda: platform
+            await plugin.prepare(event, types.SimpleNamespace(system_prompt=''))
+            resp = types.SimpleNamespace(completion_text='x' * 32 + '[NO_REPLY]', result_chain=None)
+            await plugin.check_response(event, resp)
+            self.assertFalse(event.stopped)
+            resp.completion_text = '[NO_REPLY]'
+            await plugin.check_response(event, resp)
+            self.assertTrue(event.stopped)

@@ -8,8 +8,13 @@ class Settings:
     matcher: object
     mode: str = "exact"
     suppress_followups: bool = True
-    max_buffer_chars: int = 262144
-    max_buffer_chunks: int = 8192
+    max_buffer_chars: int = 32
+    max_buffer_chunks: int = 32
+
+    def matches(self, text, has_media=False):
+        if self.mode == "exact" and len(text) > self.max_buffer_chars:
+            return False
+        return self.matcher.matches(text[:self.max_buffer_chars], self.mode, has_media)
 
 
 class EventGuard:
@@ -24,6 +29,7 @@ class EventGuard:
         self.stream_active = False
         self.stream_seen = False
         self.stream_normal = False
+        self.limit_reached = False
         # Only this event instance is patched, never the class/platform/global API.
         async def send(message, *args, **kwargs):
             if self.enabled and self.blocked and self.settings.suppress_followups:
@@ -36,9 +42,29 @@ class EventGuard:
             filtered = self.filter_stream(generator)
             self.stream_seen = True
             self.stream_normal = False
+            self.limit_reached = False
             self.stream_active = True
             try:
-                return await self.original_stream(filtered, *args, **kwargs)
+                try:
+                    first = await filtered.__anext__()
+                except StopAsyncIteration:
+                    # WebChat needs its empty completion protocol frame to end
+                    # the UI's generating state; it does not send chat content.
+                    platform = getattr(self.event, "get_platform_name", lambda: "")()
+                    if platform == "webchat":
+                        return await self.original_stream(filtered, *args, **kwargs)
+                    return None
+
+                async def replay():
+                    yield first
+                    async for item in filtered:
+                        yield item
+
+                replayed = replay()
+                try:
+                    return await self.original_stream(replayed, *args, **kwargs)
+                finally:
+                    await replayed.aclose()
             finally:
                 self.stream_active = False
                 await filtered.aclose()
@@ -81,7 +107,10 @@ class EventGuard:
                     yield chunk
                     continue
                 text, media = self.inspect_chain(chunk)
-                cursor.feed(text)
+                remaining = cfg.max_buffer_chars - size
+                chunk_limit = len(pending) >= cfg.max_buffer_chunks
+                if not chunk_limit:
+                    cursor.feed(text[:remaining])
                 if cfg.mode == "contains" and cursor.matches:
                     rejected = True
                     pending.clear()
@@ -95,12 +124,18 @@ class EventGuard:
                     pending.clear()
                     yield chunk
                     continue
-                size += len(text)
-                if size > cfg.max_buffer_chars or len(pending) >= cfg.max_buffer_chunks:
-                    rejected = True
+                if len(text) > remaining or chunk_limit:
+                    # This is a short silence-marker detector, not a full-text
+                    # moderation transaction. Never discard normal long replies.
+                    passthrough = True
+                    self.limit_reached = True
+                    self.stream_normal = True
+                    for item in pending:
+                        yield item
                     pending.clear()
-                    self.block("buffer_limit")
+                    yield chunk
                     continue
+                size += len(text)
                 # Providers may reuse/mutate a chain object after yielding it.
                 pending.append(copy.deepcopy(chunk))
             if rejected or (self.enabled and self.blocked and cfg.suppress_followups):

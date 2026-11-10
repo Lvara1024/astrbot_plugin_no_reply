@@ -13,9 +13,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Fetch pinned AstrBot adapter for compatibility tests
-        run: curl --fail --location --retry 2 --max-time 30 https://raw.githubusercontent.com/AstrBotDevs/AstrBot/v4.29.0/astrbot/core/platform/sources/aiocqhttp/aiocqhttp_message_event.py -o "$RUNNER_TEMP/adapter429.py"
+      - name: Fetch pinned AstrBot adapters for compatibility tests
+        run: |
+          curl --fail --location --retry 2 --max-time 30 https://raw.githubusercontent.com/AstrBotDevs/AstrBot/v4.29.0/astrbot/core/platform/sources/aiocqhttp/aiocqhttp_message_event.py -o "$RUNNER_TEMP/adapter429.py"
+          curl --fail --location --retry 2 --max-time 30 https://raw.githubusercontent.com/AstrBotDevs/AstrBot/v4.29.0/astrbot/core/platform/sources/lark/lark_event.py -o "$RUNNER_TEMP/lark429.py"
+          curl --fail --location --retry 2 --max-time 30 https://raw.githubusercontent.com/AstrBotDevs/AstrBot/v4.29.0/astrbot/core/platform/sources/webchat/webchat_event.py -o "$RUNNER_TEMP/webchat429.py"
       - name: Run tests
         run: python -m unittest discover -s tests -v
         env:
           ASTRBOT_429_ADAPTER: ${{ runner.temp }}/adapter429.py
+          ASTRBOT_429_LARK: ${{ runner.temp }}/lark429.py
+          ASTRBOT_429_WEBCHAT: ${{ runner.temp }}/webchat429.py

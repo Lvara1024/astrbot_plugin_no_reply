@@ -72,7 +72,7 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(''.join(c.text for c in event.sent), '[NO_REPLY] 是一个标记。')
         self.assertFalse(guard.blocked)
 
-    async def test_contains_late_marker_discards_entire_reply(self):
+    async def test_contains_marker_inside_window_discards_entire_reply(self):
         event, guard = guarded('contains')
         await event.send_streaming(source('很长的正常内容。', '末尾[NO', '_REPLY]', '后续内容'))
         self.assertEqual(event.sent, [])
@@ -97,12 +97,59 @@ class GuardTests(unittest.IsolatedAsyncioTestCase):
         await event.send(Chunk('allowed later'))
         self.assertEqual(event.sent[0].text, 'allowed later')
 
-    async def test_limits_fail_closed(self):
+    async def test_limits_release_normal_content(self):
         for kwargs, parts in [({'max_buffer_chars': 3}, ['four']), ({'max_buffer_chunks': 1}, ['', ''])]:
             event, guard = guarded('contains', **kwargs)
             await event.send_streaming(source(*parts))
-            self.assertFalse(event.sent)
-            self.assertEqual(guard.reason, 'buffer_limit')
+            self.assertEqual(''.join(c.text for c in event.sent), ''.join(parts))
+            self.assertTrue(guard.limit_reached)
+            self.assertFalse(guard.blocked)
+
+    async def test_contains_only_scans_character_window_regardless_of_chunking(self):
+        text = 'x' * 32 + '[NO_REPLY]'
+        for parts in [[text], list(text), [text[:32], text[32:]]]:
+            event, guard = guarded('contains')
+            await event.send_streaming(source(*parts))
+            self.assertEqual(''.join(c.text for c in event.sent), text)
+            self.assertFalse(guard.blocked)
+
+    async def test_contains_marker_finishing_at_window_boundary(self):
+        event, guard = guarded('contains')
+        await event.send_streaming(source('x' * 22 + '[NO_REPLY]' + 'trailing text'))
+        self.assertFalse(event.sent)
+        self.assertTrue(guard.blocked)
+
+    async def test_chunk_limit_is_not_rescanned(self):
+        event, guard = guarded('contains', max_buffer_chunks=2)
+        await event.send_streaming(source('', '', '[NO_REPLY]'))
+        self.assertEqual(''.join(c.text for c in event.sent), '[NO_REPLY]')
+        self.assertFalse(guard.blocked)
+
+    async def test_silence_does_not_start_platform_placeholder(self):
+        event = Event()
+        started = []
+        original = event.send_streaming
+        async def placeholder_adapter(generator, **kwargs):
+            started.append(True)
+            await original(generator, **kwargs)
+        event.send_streaming = placeholder_adapter
+        EventGuard(event, Settings(Matcher(['[NO_REPLY]'])), inspect, lambda *_: None)
+        await event.send_streaming(source('[NO_REPLY]'))
+        self.assertFalse(started)
+
+    async def test_webchat_gets_empty_completion(self):
+        event = Event()
+        completed = []
+        event.get_platform_name = lambda: 'webchat'
+        original = event.send_streaming
+        async def adapter(generator):
+            await original(generator)
+            completed.append(True)
+        event.send_streaming = adapter
+        EventGuard(event, Settings(Matcher(['[NO_REPLY]'])), inspect, lambda *_: None)
+        await event.send_streaming(source('[NO_REPLY]'))
+        self.assertTrue(completed)
+        self.assertFalse(event.sent)
 
     async def test_media_is_not_only_a_marker(self):
         event, guard = guarded()

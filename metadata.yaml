@@ -1,9 +1,8 @@
 name: astrbot_plugin_no_reply
 display_name: 不予回复
-desc: 多检测词沉默拦截，支持流式输出、精确或包含匹配、提示词注入及后续发送阻断。
-version: v1.0.0
+desc: 跨平台多检测词沉默拦截，支持流式输出、短窗口精确或包含匹配、提示词注入及后续发送阻断。
+version: v1.1.0
 author: Lvara1024
 repo: https://github.com/Lvara1024/astrbot_plugin_no_reply
 astrbot_version: ">=4.29,<5"
-support_platforms:
-  - aiocqhttp
+# No support_platforms restriction: uses AstrBot's common event hooks.
