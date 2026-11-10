@@ -23,6 +23,7 @@ class EventGuard:
         self.enabled = True
         self.stream_active = False
         self.stream_seen = False
+        self.stream_normal = False
         # Only this event instance is patched, never the class/platform/global API.
         async def send(message, *args, **kwargs):
             if self.enabled and self.blocked and self.settings.suppress_followups:
@@ -34,6 +35,7 @@ class EventGuard:
                 return await self.original_stream(generator, *args, **kwargs)
             filtered = self.filter_stream(generator)
             self.stream_seen = True
+            self.stream_normal = False
             self.stream_active = True
             try:
                 return await self.original_stream(filtered, *args, **kwargs)
@@ -87,6 +89,7 @@ class EventGuard:
                     continue
                 if cfg.mode == "exact" and (media or not cursor.possible):
                     passthrough = True
+                    self.stream_normal = True
                     for item in pending:
                         yield item
                     pending.clear()

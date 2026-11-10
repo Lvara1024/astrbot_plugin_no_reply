@@ -155,6 +155,8 @@ class PluginTests(unittest.IsolatedAsyncioTestCase):
             yield Chain([Plain('[NO')])
             yield Chain([Plain('_REPLY]')])
             await plugin.check_response(event, types.SimpleNamespace(completion_text='[NO_REPLY]', result_chain=None))
+            # A lower-priority response hook attempts a direct send before EOF.
+            await event.send(Chain([Plain('hook appended before generator EOF')]))
         await event.send_streaming(source())
         await event.send(Chain([Plain('later')]))
         self.assertTrue(event.stopped)

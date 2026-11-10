@@ -84,14 +84,14 @@ class NoReplyPlugin(Star):
         guard = event.get_extra(KEY)
         if guard is None:
             return
-        # In streaming mode the outbound gate sees the actual visible chunks,
-        # including media and intermediate text. The final LLMResponse alone
-        # can differ, so it must not override that decision.
-        if guard.stream_active:
-            return
         text = resp.completion_text or ""
         chain_text, media = inspect_chain(getattr(resp, "result_chain", None))
         matched = guard.settings.matcher.matches(text or chain_text, guard.settings.mode, media)
+        # A normal stream prefix (including media) rules out exact matching.
+        # Otherwise recognize a final marker here too, before lower-priority
+        # response hooks can append/send text while the generator is finishing.
+        if guard.stream_active and guard.settings.mode == "exact" and guard.stream_normal:
+            matched = False
         if matched:
             guard.block()
         if matched or (guard.blocked and guard.settings.suppress_followups):
